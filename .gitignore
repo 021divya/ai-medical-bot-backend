@@ -1,0 +1,23 @@
+# =====================
+# Python / Virtual Env
+# =====================
+venv/
+__pycache__/
+*.pyc
+
+# =====================
+# ML Models (CRITICAL)
+# =====================
+model/
+model/**
+
+# =====================
+# Raw Datasets
+# =====================
+data/doctor_dataset.xlsx
+
+# =====================
+# OS / Editor
+# =====================
+.DS_Store
+Thumbs.db
