@@ -1,27 +1,27 @@
 import torch
-import json
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 # =========================
-# Paths
+# SAFE DEPLOY CONFIG
 # =========================
 MODEL_DIR = "model"
-LABEL_MAP_PATH = "model/label_map.json"
 
-# =========================
-# Load label map
-# =========================
-with open(LABEL_MAP_PATH, "r") as f:
-    label_map = json.load(f)
+tokenizer = None
+model = None
 
-id2label = {int(v): k for k, v in label_map.items()}
+def load_ml_model():
+    global tokenizer, model
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
+        model = AutoModelForSequenceClassification.from_pretrained(MODEL_DIR)
+        model.eval()
+        print("✅ ML model loaded")
+    except Exception as e:
+        tokenizer = None
+        model = None
+        print("⚠️ ML model not found, using rule-based only")
 
-# =========================
-# Load tokenizer & model
-# =========================
-tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
-model = AutoModelForSequenceClassification.from_pretrained(MODEL_DIR)
-model.eval()
+load_ml_model()
 
 # =========================
 # Prediction function
@@ -30,58 +30,48 @@ def predict_specialist(symptoms_text: str) -> str:
     text = symptoms_text.lower().strip()
 
     # -------------------------
-    # General medicine first (vague symptoms)
+    # RULE-BASED (PRIMARY)
     # -------------------------
-    general_symptoms = [
-        "nausea", "vomiting", "fever", "weakness",
-        "fatigue", "dizziness", "cold", "cough", "flu"
-    ]
+    if any(w in text for w in ["joint", "knee", "bone", "arthritis"]):
+        return "Orthopedics"
 
-    if any(word in text for word in general_symptoms):
+    if any(w in text for w in ["skin", "rash", "itch", "acne"]):
+        return "Dermatology"
+
+    if any(w in text for w in ["chest", "heart", "palpitation"]):
+        return "Cardiology"
+
+    if any(w in text for w in ["headache", "migraine", "seizure"]):
+        return "Neurology"
+
+    if any(w in text for w in ["fever", "vomiting", "cold", "weakness", "fatigue"]):
         return "General Medicine"
 
     # -------------------------
-    # Clear specialist cases
+    # ML FALLBACK (OPTIONAL)
     # -------------------------
-    if any(word in text for word in ["joint", "knee", "bone", "arthritis"]):
-        return "Orthopedics"
+    if tokenizer and model:
+        inputs = tokenizer(
+            text,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
+            max_length=128
+        )
+        with torch.no_grad():
+            outputs = model(**inputs)
+            predicted_class = torch.argmax(outputs.logits, dim=1).item()
 
-    if any(word in text for word in ["skin", "rash", "itch", "acne"]):
-        return "Dermatology"
-
-    if any(word in text for word in ["chest", "heart", "palpitation"]):
-        return "Cardiology"
-
-    if any(word in text for word in ["headache", "migraine", "seizure"]):
-        return "Neurology"
+        return str(predicted_class)
 
     # -------------------------
-    # ML fallback
+    # SAFE DEFAULT
     # -------------------------
-    inputs = tokenizer(
-        text,
-        return_tensors="pt",
-        truncation=True,
-        padding=True,
-        max_length=128
-    )
-
-    with torch.no_grad():
-        outputs = model(**inputs)
-        predicted_class = torch.argmax(outputs.logits, dim=1).item()
-
-    return id2label.get(predicted_class, "General Medicine")
-
-
-
-
-
+    return "General Medicine"
 
 
 # =========================
-# Test
+# Local Test
 # =========================
 if __name__ == "__main__":
-    test_text = "chest pain and breathlessness"
-    result = predict_specialist(test_text)
-    print("Predicted Specialist:", result)
+    print(predict_specialist("chest pain and breathlessness"))
